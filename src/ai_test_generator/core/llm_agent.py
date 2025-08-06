@@ -7,22 +7,22 @@ Azure OpenAI Service와 연동하여 테스트 코드를 생성합니다.
 import os
 import json
 from textwrap import dedent
-from typing import List, Dict, Any, Optional, TypedDict, Annotated, Literal
-import datetime
+from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from dataclasses import dataclass
 import logging
 from enum import Enum
 
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langfuse import Langfuse
 from langfuse import observe
 
-from ai_test_generator.core.git_analyzer import FileChange, CommitAnalysis
+from ai_test_generator.core.vcs_models import FileChange, CommitAnalysis
+from ai_test_generator.utils.prompt_loader import PromptLoader
 from ai_test_generator.utils.config import Config
 from ai_test_generator.utils.logger import get_logger, LogContext
 from pathlib import Path
@@ -89,6 +89,7 @@ class LLMAgent:
             config: 애플리케이션 설정
         """
         self.config = config
+        self.prompt_loader = PromptLoader()
         self._initialize_llm()
         self._initialize_langfuse()
         self._build_graph()
@@ -221,20 +222,11 @@ class LLMAgent:
             # 변경사항 요약
             changes_summary = self._summarize_changes(state["file_changes"])
             
-            # 분석 프롬프트
-            system_prompt = """You are an expert software test engineer analyzing code changes.
-            Analyze the following code changes and provide insights about:
-            1. The nature and scope of changes
-            2. Potential impact on the system
-            3. Risk areas that need testing
-            4. Suggested testing approach
-            
-            Output your analysis in a structured format."""
-            
-            human_prompt = f"""Code changes summary:
-            {changes_summary}
-            
-            Provide a comprehensive analysis of these changes."""
+            # 프롬프트 로드
+            system_prompt, human_prompt = self.prompt_loader.get_prompt(
+                "analyze_changes",
+                changes_summary=changes_summary
+            )
             
             messages = [
                 SystemMessage(content=system_prompt),
@@ -261,27 +253,28 @@ class LLMAgent:
             # 이전 분석 결과 가져오기
             last_analysis = state["messages"][-1].content if state["messages"] else ""
             
-            # 전략 결정 프롬프트
-            strategy_prompt = ChatPromptTemplate.from_messages([
-                ("system", """Based on the code analysis, determine the appropriate testing strategy.
-                Consider:
-                - File types and changes
-                - Complexity of changes
-                - Dependencies affected
-                - Risk level
-                
-                Output a JSON with:
-                {
-                    "primary_strategy": "unit|integration|performance|security",
-                    "secondary_strategies": ["list", "of", "strategies"],
-                    "reasoning": "explanation of why these strategies were chosen",
-                    "priority_areas": ["list", "of", "focus", "areas"]
-                }"""),
-                ("human", "Analysis: {analysis}")
-            ])
+            # 프롬프트 로드 및 변수 치환
+            system_prompt, human_prompt = self.prompt_loader.get_prompt(
+                "determine_strategy", 
+                analysis=last_analysis
+            )
             
-            chain = strategy_prompt | self.llm | JsonOutputParser()
-            strategy_result = await chain.ainvoke({"analysis": last_analysis})
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt)
+            ]
+            
+            response = await self.llm.ainvoke(messages)
+            
+            # JSON 파싱 (한글 인코딩 문제 해결)
+            try:
+                strategy_result = json.loads(response.content)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse JSON response, using default strategy")
+                strategy_result = {
+                    "primary_strategy": "unit",
+                    "reasoning": "JSON 파싱 실패로 기본 전략 사용"
+                }
             
             # 주요 전략 설정
             primary = strategy_result.get("primary_strategy", "unit")
@@ -292,7 +285,7 @@ class LLMAgent:
             else:
                 state["test_strategy"] = TestStrategy.UNIT_TEST
             
-            state["messages"].append(AIMessage(content=json.dumps(strategy_result)))
+            state["messages"].append(AIMessage(content=json.dumps(strategy_result, ensure_ascii=False, indent=2)))
             logger.info(f"Test strategy determined: {state['test_strategy']}")
             
         except Exception as e:
@@ -657,27 +650,33 @@ class LLMAgent:
         tests = []
         
         try:
-            # 언어별 테스트 생성 프롬프트
-            test_prompt = self._get_test_generation_prompt(
-                file_change.language,
-                test_type
-            )
+            # 언어별 특화 텍스트 준비
+            language_specific = ""
+            if file_change.language == "python":
+                language_specific = "Use pytest framework with proper fixtures and assertions."
+            elif file_change.language == "java":
+                language_specific = "Use JUnit 5 with appropriate annotations and assertions."
+            elif file_change.language == "javascript":
+                language_specific = "Use Jest framework with proper describe/it blocks."
             
             # RAG 컨텍스트 포함
             context = f"Testing conventions:\n{rag_context}\n\n" if rag_context else ""
             
             # 변경된 함수별로 테스트 생성
             for function_name in file_change.functions_changed[:5]:  # 최대 5개
-                prompt = test_prompt.format(
+                system_prompt, human_prompt = self.prompt_loader.get_prompt(
+                    "test_generation",
                     context=context,
+                    test_type=test_type.value,
                     file_path=file_change.file_path,
                     function_name=function_name,
-                    diff_content=file_change.diff_content[:2000]  # 일부만
+                    diff_content=file_change.diff_content[:2000],
+                    language_specific=language_specific
                 )
                 
                 response = await self.llm.ainvoke([
-                    SystemMessage(content="You are an expert test engineer."),
-                    HumanMessage(content=prompt)
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=human_prompt)
                 ])
                 
                 # 테스트 코드 파싱
