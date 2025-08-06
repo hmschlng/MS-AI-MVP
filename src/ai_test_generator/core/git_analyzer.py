@@ -5,47 +5,21 @@ Git Analyzer Module - VCS 변경사항 분석
 테스트 생성에 필요한 정보를 추출합니다.
 """
 import os
-from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass, field
+import logging
+import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
-import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 import git
-from git import Repo, Commit, Diff
+from git import Commit, Diff, Repo
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from .vcs_models import FileChange, CommitAnalysis
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class FileChange:
-    """파일 변경 정보를 담는 데이터 클래스"""
-    file_path: str
-    change_type: str  # 'added', 'modified', 'deleted', 'renamed'
-    old_path: Optional[str] = None  # renamed의 경우 이전 경로
-    additions: int = 0
-    deletions: int = 0
-    diff_content: str = ""
-    language: Optional[str] = None
-    functions_changed: List[str] = field(default_factory=list)
-    classes_changed: List[str] = field(default_factory=list)
-
-
-@dataclass
-class CommitAnalysis:
-    """커밋 분석 결과를 담는 데이터 클래스"""
-    commit_hash: str
-    author: str
-    author_email: str
-    commit_date: datetime
-    message: str
-    files_changed: List[FileChange]
-    total_additions: int = 0
-    total_deletions: int = 0
-    branch: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
 
 
 class GitAnalyzer:
@@ -94,6 +68,57 @@ class GitAnalyzer:
             logger.error(f"Failed to initialize repository: {e}")
             raise
     
+    @staticmethod
+    def clone_remote_repo(remote_url: str, clone_dir: Optional[str] = None, branch: Optional[str] = None) -> str:
+        """
+        원격 Git 저장소(GitHub/GitLab 등)에서 저장소를 클론하여 로컬 경로 반환
+
+        Args:
+            remote_url: 원격 저장소 URL (예: https://github.com/user/repo.git)
+            clone_dir: 클론할 임시 디렉터리 (None이면 임시 디렉터리 생성)
+            branch: 특정 브랜치만 클론하려면 브랜치명 지정
+
+        Returns:
+            클론된 저장소의 로컬 경로(str)
+        """
+
+        if clone_dir is None:
+            clone_dir = tempfile.mkdtemp(prefix="git_analyzer_clone_")
+
+        try:
+            clone_args = {}
+            if branch:
+                clone_args["branch"] = branch
+            Repo.clone_from(remote_url, clone_dir, **clone_args)
+
+            logger.info(f"Cloned remote repo {remote_url} to {clone_dir}")
+
+            return clone_dir
+        
+        except Exception as e:
+            logger.error(f"Failed to clone remote repo: {e}")
+            # 클론 실패 시 임시 디렉터리 정리
+            if os.path.exists(clone_dir):
+                shutil.rmtree(clone_dir)
+            raise
+
+    @classmethod
+    def from_remote(cls, remote_url: str, branch: Optional[str] = None, default_branch: str = "main"):
+        """
+        원격 저장소를 클론하여 GitAnalyzer 인스턴스 생성
+
+        Args:
+            remote_url: 원격 저장소 URL
+            branch: 분석할 브랜치명 (None이면 기본 브랜치)
+            default_branch: 기본 브랜치명
+
+        Returns:
+            GitAnalyzer 인스턴스
+        """
+        clone_dir = cls.clone_remote_repo(remote_url, branch=branch or default_branch)
+
+        return cls(clone_dir, default_branch=branch or default_branch)
+
     @property
     def repo(self) -> Repo:
         """Git 저장소 객체 반환"""
