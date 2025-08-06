@@ -22,18 +22,18 @@ class AzureOpenAIConfig:
     deployment_name_agent: str
     deployment_name_rag: str
     deployment_name_embedding: str
-    api_version: str = "2024-12-01-preview"
+    api_version: str
     
     @classmethod
     def from_env(cls) -> 'AzureOpenAIConfig':
         """환경 변수에서 설정 로드"""
         return cls(
-            endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=os.getenv('AZURE_OPENAI_API_KEY', ''),
-            deployment_name_agent=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_AGENT', 'gpt-4'),
-            deployment_name_rag=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_RAG', 'gpt-4'),
-            deployment_name_embedding=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_TEXT_EMBEDDING', 'text-embedding-3-small'),
-            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-12-01-preview')
+            endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
+            api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+            deployment_name_agent=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_AGENT'),
+            deployment_name_rag=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_RAG'),
+            deployment_name_embedding=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME_FOR_TEXT_EMBEDDING'),
+            api_version=os.getenv('AZURE_OPENAI_API_VERSION')
         )
 
 
@@ -48,9 +48,9 @@ class AzureSearchConfig:
     def from_env(cls) -> 'AzureSearchConfig':
         """환경 변수에서 설정 로드"""
         return cls(
-            endpoint=os.getenv('AZURE_SEARCH_ENDPOINT', ''),
-            api_key=os.getenv('AZURE_SEARCH_API_KEY', ''),
-            index_name=os.getenv('AZURE_SEARCH_INDEX_NAME', 'test-conventions-index')
+            endpoint=os.getenv('AZURE_SEARCH_ENDPOINT'),
+            api_key=os.getenv('AZURE_SEARCH_API_KEY'),
+            index_name=os.getenv('AZURE_SEARCH_INDEX_NAME')
         )
 
 
