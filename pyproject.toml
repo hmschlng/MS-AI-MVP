@@ -7,33 +7,29 @@ requires-python = "==3.12.10"
 dependencies = [
     # Version Control
     "gitpython>=3.1.40",
-    
+    "pysvn>=0.1.0",
     # LangChain Ecosystem
     "langchain>=0.1.0",
     "langchain-openai>=0.0.8",
     "langgraph>=0.0.40",
     "langfuse>=2.0.0",
-    
     # Azure Integration
     "azure-search-documents>=11.4.0",
     "azure-identity>=1.15.0",
     "azure-core>=1.29.0",
-    
     # Data Processing
     "pandas>=2.2.2",
     "openpyxl>=3.1.0",
     "numpy>=2.0.0",
-    
     # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.1.0",
     "rich>=13.0.0",
     "pydantic>=2.5.0",
-    "tenacity>=8.2.0",  # 재시도 로직
-    "PyYAML>=6.0.0",  # YAML 파일 처리
-    
+    "tenacity>=8.2.0", # 재시도 로직
+    "PyYAML>=6.0.0", # YAML 파일 처리
     # Development Tools
-    "jupyter>=1.0.0",  # 개발 및 디버깅용
+    "jupyter>=1.0.0", # 개발 및 디버깅용
 ]
 
 [project.optional-dependencies]
