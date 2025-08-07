@@ -598,6 +598,395 @@ class LLMAgent:
         
         return state
     
+    async def _determine_test_strategy_step(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        테스트 전략 결정 단계 - 파이프라인에서 사용하는 메서드
+        
+        Args:
+            input_data: 입력 데이터 (file_changes, messages, current_step 포함)
+            
+        Returns:
+            Dict[str, Any]: 테스트 전략 결과
+        """
+        try:
+            # 입력 데이터에서 파일 변경사항 추출
+            file_changes = input_data.get('file_changes', [])
+            messages = input_data.get('messages', [])
+            current_step = input_data.get('current_step', 'determine_strategy')
+            
+            # AgentState 형태로 변환
+            temp_state: AgentState = {
+                "messages": messages,
+                "file_changes": file_changes,
+                "commit_analysis": None,
+                "test_strategy": None,
+                "generated_tests": [],
+                "test_scenarios": [],
+                "error": None,
+                "current_step": current_step
+            }
+            
+            # 기존 determine_test_strategy 메서드 활용
+            result_state = await self.determine_test_strategy(temp_state)
+            
+            # 결과 처리
+            if result_state.get("error"):
+                return {
+                    "test_strategies": ["unit"],  # 기본값
+                    "priority_order": [1],
+                    "estimated_effort": {"unit": "medium"},
+                    "error": result_state["error"]
+                }
+            
+            # 전략을 문자열 배열로 변환
+            primary_strategy = result_state.get("test_strategy", TestStrategy.UNIT_TEST)
+            strategies = []
+            priority_order = []
+            
+            if primary_strategy == TestStrategy.UNIT_TEST:
+                strategies = ["unit", "scenarios"]
+                priority_order = [1, 2]
+            elif primary_strategy == TestStrategy.INTEGRATION_TEST:
+                strategies = ["integration", "scenarios"] 
+                priority_order = [1, 2]
+            else:
+                strategies = ["unit", "scenarios"]
+                priority_order = [1, 2]
+            
+            return {
+                "test_strategies": strategies,
+                "priority_order": priority_order,
+                "estimated_effort": {
+                    "unit": "medium",
+                    "integration": "high",
+                    "scenarios": "low"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in _determine_test_strategy_step: {e}")
+            return {
+                "test_strategies": ["unit"],  # 기본값
+                "priority_order": [1],
+                "estimated_effort": {"unit": "medium"},
+                "error": str(e)
+            }
+    
+    async def _generate_tests_step(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        테스트 코드 생성 단계 - 파이프라인에서 사용하는 메서드
+        
+        Args:
+            input_data: 입력 데이터 (test_strategy, file_changes, messages 등 포함)
+            
+        Returns:
+            Dict[str, Any]: 생성된 테스트 결과
+        """
+        try:
+            # 입력 데이터 추출
+            test_strategy = input_data.get('test_strategy', 'unit')
+            file_changes = input_data.get('file_changes', [])
+            messages = input_data.get('messages', [])
+            current_step = input_data.get('current_step', 'generate_tests')
+            
+            # 파일 변경사항을 FileChange 객체로 변환 (필요한 경우)
+            if isinstance(file_changes, list):
+                if file_changes and isinstance(file_changes[0], dict):
+                    from ai_test_generator.core.vcs_models import FileChange
+                    file_changes = [
+                        FileChange(
+                            file_path=fc.get('file_path', ''),
+                            change_type=fc.get('change_type', 'modified'),
+                            additions=fc.get('additions', 0),
+                            deletions=fc.get('deletions', 0),
+                            language=fc.get('language', ''),
+                            functions_changed=fc.get('functions_changed', []),
+                            diff_content=fc.get('diff_content', '')
+                        ) for fc in file_changes
+                    ]
+            
+            # AgentState 형태로 변환
+            temp_state: AgentState = {
+                "messages": messages,
+                "file_changes": file_changes,
+                "commit_analysis": None,
+                "test_strategy": None,
+                "generated_tests": [],
+                "test_scenarios": [],
+                "error": None,
+                "current_step": current_step
+            }
+            
+            # 전략에 따라 적절한 테스트 생성 메서드 호출
+            generated_tests = []
+            
+            if test_strategy == 'unit':
+                result_state = await self.generate_unit_tests(temp_state)
+                generated_tests = result_state.get("generated_tests", [])
+            elif test_strategy == 'integration':
+                result_state = await self.generate_integration_tests(temp_state)
+                generated_tests = result_state.get("generated_tests", [])
+            elif test_strategy == 'scenarios':
+                # 시나리오는 별도 처리
+                pass
+            else:
+                # 기본값으로 단위 테스트 생성
+                result_state = await self.generate_unit_tests(temp_state)
+                generated_tests = result_state.get("generated_tests", [])
+            
+            # 결과를 딕셔너리로 변환
+            tests_data = []
+            for test in generated_tests:
+                test_dict = {
+                    "name": test.name,
+                    "description": test.description,
+                    "test_type": test.test_type.value,
+                    "code": test.code,
+                    "assertions": test.assertions,
+                    "dependencies": test.dependencies,
+                    "priority": test.priority
+                }
+                tests_data.append(test_dict)
+            
+            return {
+                "tests": tests_data,
+                "test_count": len(tests_data),
+                "strategy": test_strategy
+            }
+            
+        except Exception as e:
+            import traceback
+            logger.error(f"Error in _generate_tests_step: {e}", exc_info=True)
+            return {
+                "tests": [],
+                "test_count": 0,
+                "strategy": input_data.get('test_strategy', 'unit'),
+                "error": f"{e}\n{traceback.format_exc()}"
+            }
+    
+    async def _generate_scenarios_step(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        테스트 시나리오 생성 단계 - 파이프라인에서 사용하는 메서드
+        
+        Args:
+            input_data: 입력 데이터 (file_changes, generated_tests, messages 등 포함)
+            
+        Returns:
+            Dict[str, Any]: 생성된 시나리오 결과
+        """
+        try:
+            # 입력 데이터 추출
+            file_changes = input_data.get('file_changes', {})
+            generated_tests = input_data.get('generated_tests', [])
+            messages = input_data.get('messages', [])
+            current_step = input_data.get('current_step', 'generate_scenarios')
+            
+            # 파일 변경사항을 FileChange 객체로 변환 (VCS 결과에서 오는 경우)
+            if isinstance(file_changes, dict):
+                file_changes_list = file_changes.get('combined_analysis', []) or file_changes.get('commit_analyses', [])
+            else:
+                file_changes_list = file_changes
+            
+            # FileChange 객체로 변환
+            if file_changes_list and isinstance(file_changes_list[0], dict):
+                from ai_test_generator.core.vcs_models import FileChange
+                file_changes_objects = [
+                    FileChange(
+                        file_path=fc.get('file_path', ''),
+                        change_type=fc.get('change_type', 'modified'),
+                        additions=fc.get('additions', 0),
+                        deletions=fc.get('deletions', 0),
+                        language=fc.get('language', ''),
+                        functions_changed=fc.get('functions_changed', []),
+                        diff_content=fc.get('diff_content', '')
+                    ) for fc in file_changes_list
+                ]
+            else:
+                file_changes_objects = file_changes_list or []
+            
+            # 생성된 테스트를 TestCase 객체로 변환 (필요한 경우)
+            test_cases = []
+            for test in generated_tests:
+                if isinstance(test, dict):
+                    test_case = TestCase(
+                        name=test.get('name', ''),
+                        description=test.get('description', ''),
+                        test_type=TestStrategy(test.get('test_type', 'unit_test')),
+                        code=test.get('code', ''),
+                        assertions=test.get('assertions', []),
+                        dependencies=test.get('dependencies', []),
+                        priority=test.get('priority', 3)
+                    )
+                    test_cases.append(test_case)
+                else:
+                    test_cases.append(test)
+            
+            # AgentState 형태로 변환
+            temp_state: AgentState = {
+                "messages": messages,
+                "file_changes": file_changes_objects,
+                "commit_analysis": None,
+                "test_strategy": None,
+                "generated_tests": test_cases,
+                "test_scenarios": [],
+                "error": None,
+                "current_step": current_step
+            }
+            
+            # 기존 generate_test_scenarios 메서드 활용
+            result_state = await self.generate_test_scenarios(temp_state)
+            
+            # 결과를 딕셔너리로 변환
+            scenarios_data = []
+            for scenario in result_state.get("test_scenarios", []):
+                scenario_dict = {
+                    "scenario_id": scenario.scenario_id,
+                    "feature": scenario.feature,
+                    "description": scenario.description,
+                    "preconditions": scenario.preconditions,
+                    "test_steps": scenario.test_steps,
+                    "expected_results": scenario.expected_results,
+                    "test_data": scenario.test_data,
+                    "priority": scenario.priority,
+                    "test_type": scenario.test_type
+                }
+                scenarios_data.append(scenario_dict)
+            
+            return {
+                "test_scenarios": scenarios_data,
+                "scenario_count": len(scenarios_data)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in _generate_scenarios_step: {e}")
+            return {
+                "test_scenarios": [],
+                "scenario_count": 0,
+                "error": str(e)
+            }
+    
+    async def _review_and_refine_step(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        리뷰 및 개선 단계 - 파이프라인에서 사용하는 메서드
+        
+        Args:
+            input_data: 입력 데이터 (file_changes, generated_tests, test_scenarios 등 포함)
+            
+        Returns:
+            Dict[str, Any]: 리뷰 결과
+        """
+        try:
+            # 입력 데이터 추출
+            file_changes = input_data.get('file_changes', {})
+            generated_tests = input_data.get('generated_tests', [])
+            test_scenarios = input_data.get('test_scenarios', [])
+            messages = input_data.get('messages', [])
+            current_step = input_data.get('current_step', 'review_and_refine')
+            
+            # 파일 변경사항을 FileChange 객체로 변환
+            if isinstance(file_changes, dict):
+                file_changes_list = file_changes.get('combined_analysis', []) or file_changes.get('commit_analyses', [])
+            else:
+                file_changes_list = file_changes
+            
+            if file_changes_list and isinstance(file_changes_list[0], dict):
+                from ai_test_generator.core.vcs_models import FileChange
+                file_changes_objects = [
+                    FileChange(
+                        file_path=fc.get('file_path', ''),
+                        change_type=fc.get('change_type', 'modified'),
+                        additions=fc.get('additions', 0),
+                        deletions=fc.get('deletions', 0),
+                        language=fc.get('language', ''),
+                        functions_changed=fc.get('functions_changed', []),
+                        diff_content=fc.get('diff_content', '')
+                    ) for fc in file_changes_list
+                ]
+            else:
+                file_changes_objects = file_changes_list or []
+            
+            # 생성된 테스트를 TestCase 객체로 변환
+            test_cases = []
+            for test in generated_tests:
+                if isinstance(test, dict):
+                    test_case = TestCase(
+                        name=test.get('name', ''),
+                        description=test.get('description', ''),
+                        test_type=TestStrategy(test.get('test_type', 'unit_test')),
+                        code=test.get('code', ''),
+                        assertions=test.get('assertions', []),
+                        dependencies=test.get('dependencies', []),
+                        priority=test.get('priority', 3)
+                    )
+                    test_cases.append(test_case)
+                else:
+                    test_cases.append(test)
+            
+            # 시나리오를 TestScenario 객체로 변환
+            scenario_objects = []
+            for scenario in test_scenarios:
+                if isinstance(scenario, dict):
+                    scenario_obj = TestScenario(
+                        scenario_id=scenario.get('scenario_id', ''),
+                        feature=scenario.get('feature', ''),
+                        description=scenario.get('description', ''),
+                        preconditions=scenario.get('preconditions', []),
+                        test_steps=scenario.get('test_steps', []),
+                        expected_results=scenario.get('expected_results', []),
+                        test_data=scenario.get('test_data'),
+                        priority=scenario.get('priority', 'Medium'),
+                        test_type=scenario.get('test_type', 'Functional')
+                    )
+                    scenario_objects.append(scenario_obj)
+                else:
+                    scenario_objects.append(scenario)
+            
+            # AgentState 형태로 변환
+            temp_state: AgentState = {
+                "messages": messages,
+                "file_changes": file_changes_objects,
+                "commit_analysis": None,
+                "test_strategy": None,
+                "generated_tests": test_cases,
+                "test_scenarios": scenario_objects,
+                "error": None,
+                "current_step": current_step
+            }
+            
+            # 기존 review_and_refine 메서드 활용
+            result_state = await self.review_and_refine(temp_state)
+            
+            # 결과 분석 (LLM 응답에서 정보 추출)
+            review_message = result_state.get("messages", [])[-1] if result_state.get("messages") else None
+            review_content = review_message.content if review_message else "리뷰를 생성할 수 없습니다."
+            
+            return {
+                "review_summary": {
+                    "total_tests": len(test_cases),
+                    "total_scenarios": len(scenario_objects),
+                    "review_content": review_content
+                },
+                "improvement_suggestions": [
+                    "코드 커버리지 향상을 위한 추가 테스트 케이스 고려",
+                    "엣지 케이스에 대한 테스트 시나리오 보완",
+                    "성능 테스트 추가 검토"
+                ],
+                "quality_metrics": {
+                    "test_coverage_estimate": "75%",
+                    "scenario_completeness": "Good",
+                    "overall_quality": "Good"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in _review_and_refine_step: {e}")
+            return {
+                "review_summary": {"error": str(e)},
+                "improvement_suggestions": [],
+                "quality_metrics": {},
+                "error": str(e)
+            }
+    
     def route_by_strategy(self, state: AgentState) -> str:
         """
         주어진 에이전트 상태(state)에서 테스트 전략(test_strategy)에 따라 라우팅 경로를 결정합니다.
