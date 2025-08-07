@@ -177,6 +177,7 @@ class GitAnalyzer:
             커밋 분석 결과
         """
         logger.debug(f"Analyzing commit {commit.hexsha}")
+        logger.debug(f"Commit has {len(commit.parents)} parents")
         
         # 기본 커밋 정보 추출
         analysis = CommitAnalysis(
@@ -194,9 +195,11 @@ class GitAnalyzer:
             # 일반 커밋인 경우
             parent = commit.parents[0]
             diffs = parent.diff(commit)
+            logger.debug(f"Found {len(diffs)} diffs between {parent.hexsha[:8]} and {commit.hexsha[:8]}")
         else:
             # 초기 커밋인 경우
             diffs = commit.diff(None)
+            logger.debug(f"Found {len(diffs)} diffs for initial commit {commit.hexsha[:8]}")
         
         for diff in diffs:
             file_change = self._analyze_diff(diff)
@@ -204,6 +207,9 @@ class GitAnalyzer:
                 analysis.files_changed.append(file_change)
                 analysis.total_additions += file_change.additions
                 analysis.total_deletions += file_change.deletions
+                logger.debug(f"File {file_change.file_path}: +{file_change.additions}/-{file_change.deletions}")
+        
+        logger.debug(f"Commit analysis complete: {len(analysis.files_changed)} files, +{analysis.total_additions}/-{analysis.total_deletions}")
         
         return analysis
     
@@ -232,6 +238,11 @@ class GitAnalyzer:
                 change_type = 'modified'
                 file_path = diff.b_path or diff.a_path
             
+            logger.debug(f"Processing {change_type} file: {file_path}")
+            logger.debug(f"diff.diff is None: {diff.diff is None}")
+            logger.debug(f"diff has a_blob: {hasattr(diff, 'a_blob') and diff.a_blob is not None}")
+            logger.debug(f"diff has b_blob: {hasattr(diff, 'b_blob') and diff.b_blob is not None}")
+            
             # 파일 확장자로 언어 추측
             ext = Path(file_path).suffix.lower()
             language = self.SUPPORTED_LANGUAGES.get(ext)
@@ -244,25 +255,72 @@ class GitAnalyzer:
                 language=language
             )
             
+            # diff 내용 초기화
+            diff_content = ""
+            
             # diff 내용 분석 (삭제된 파일 제외)
-            if change_type != 'deleted' and diff.diff:
-                diff_content = diff.diff.decode('utf-8', errors='ignore')
-                file_change.diff_content = diff_content
+            if change_type != 'deleted':
+                # diff.diff가 None인 경우를 처리
+                if diff.diff:
+                    diff_content = diff.diff.decode('utf-8', errors='ignore')
+                    file_change.diff_content = diff_content
+                    
+                    # 추가/삭제 라인 수 계산
+                    additions = 0
+                    deletions = 0
+                    for line in diff_content.split('\n'):
+                        if line.startswith('+') and not line.startswith('+++'):
+                            additions += 1
+                        elif line.startswith('-') and not line.startswith('---'):
+                            deletions += 1
+                    
+                    file_change.additions = additions
+                    file_change.deletions = deletions
+                else:
+                    # diff.diff가 None인 경우 GitPython의 다른 속성 사용
+                    logger.debug(f"diff.diff is None for {file_path}, using alternative methods")
+                    
+                    # GitPython의 통계 정보 사용 시도
+                    try:
+                        # 커밋의 stats 정보에서 파일별 통계 가져오기
+                        if hasattr(diff, 'a_blob') and hasattr(diff, 'b_blob'):
+                            # 직접 blob 비교로 라인 수 계산
+                            if diff.a_blob and diff.b_blob:
+                                a_lines = diff.a_blob.data_stream.read().decode('utf-8', errors='ignore').splitlines()
+                                b_lines = diff.b_blob.data_stream.read().decode('utf-8', errors='ignore').splitlines()
+                                
+                                # 간단한 diff 계산
+                                import difflib
+                                diff_lines = list(difflib.unified_diff(a_lines, b_lines, lineterm=''))
+                                
+                                additions = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))
+                                deletions = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))
+                                
+                                file_change.additions = additions
+                                file_change.deletions = deletions
+                                diff_content = '\n'.join(diff_lines)
+                                file_change.diff_content = diff_content
+                            elif diff.new_file and diff.b_blob:
+                                # 새 파일인 경우
+                                b_lines = diff.b_blob.data_stream.read().decode('utf-8', errors='ignore').splitlines()
+                                file_change.additions = len(b_lines)
+                                file_change.deletions = 0
+                                diff_content = '\n'.join([f'+{line}' for line in b_lines])
+                                file_change.diff_content = diff_content
+                            elif diff.deleted_file and diff.a_blob:
+                                # 삭제된 파일인 경우
+                                a_lines = diff.a_blob.data_stream.read().decode('utf-8', errors='ignore').splitlines()
+                                file_change.additions = 0
+                                file_change.deletions = len(a_lines)
+                                diff_content = '\n'.join([f'-{line}' for line in a_lines])
+                                file_change.diff_content = diff_content
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate diff stats for {file_path}: {e}")
+                        file_change.additions = 0
+                        file_change.deletions = 0
                 
-                # 추가/삭제 라인 수 계산
-                additions = 0
-                deletions = 0
-                for line in diff_content.split('\n'):
-                    if line.startswith('+') and not line.startswith('+++'):
-                        additions += 1
-                    elif line.startswith('-') and not line.startswith('---'):
-                        deletions += 1
-                
-                file_change.additions = additions
-                file_change.deletions = deletions
-                
-                # 언어별 함수/클래스 변경사항 추출
-                if language:
+                # 언어별 함수/클래스 변경사항 추출 (diff_content가 있을 때만)
+                if language and diff_content:
                     file_change.functions_changed = self._extract_changed_functions(
                         diff_content, language
                     )
