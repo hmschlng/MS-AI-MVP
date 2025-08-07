@@ -73,7 +73,6 @@ class AgentState(TypedDict):
     test_strategy: Optional[TestStrategy]
     generated_tests: List[TestCase]
     test_scenarios: List[TestScenario]
-    rag_context: Optional[str]
     error: Optional[str]
     current_step: str
 
@@ -305,8 +304,7 @@ class LLMAgent:
                 if file_change.language and file_change.change_type != "deleted":
                     tests = await self._generate_tests_for_file(
                         file_change,
-                        TestStrategy.UNIT_TEST,
-                        state.get("rag_context")
+                        TestStrategy.UNIT_TEST
                     )
                     state["generated_tests"].extend(tests)
             
@@ -340,8 +338,7 @@ class LLMAgent:
                         tests = await self._generate_integration_tests_for_group(
                             main_file,
                             file_group,
-                            integration_context,
-                            state.get("rag_context")
+                            integration_context
                         )
                         state["generated_tests"].extend(tests)
 
@@ -409,8 +406,7 @@ class LLMAgent:
         self,
         main_file: FileChange,
         file_group: List[FileChange],
-        integration_context: str,
-        rag_context: Optional[str] = None
+        integration_context: str
     ) -> List[TestCase]:
         """파일 그룹에 대한 통합 테스트 생성"""
 
@@ -433,16 +429,15 @@ class LLMAgent:
                 4. Error propagation across components
                 5. Integration with external services or databases
 
-                {rag_context or ''}
 
                 Code changes:
                 {main_file.diff_content[:2000]}
 
-                Generate comprehensive integration tests that verify the components work together correctly.
+                Generate comprehensive integration tests that verify the components work together correctly. Use Korean language.
             """)
 
             response = await self.llm.ainvoke([
-            SystemMessage(content="You are an expert test engineer specializing in integration testing."),
+            SystemMessage(content="You are an expert Korean test engineer specializing in integration testing."),
             HumanMessage(content=prompt)
             ])
 
@@ -490,8 +485,8 @@ class LLMAgent:
             
             # 시나리오 생성 프롬프트
             scenario_prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are creating test scenarios for QA documentation.
-                Generate detailed test scenarios based on the code changes and generated tests.
+                ("system", """You are creating Korean test scenarios for QA documentation.
+                Generate detailed Korean test scenarios based on the code changes and generated tests.
                 
                 For each scenario, provide:
                 - Unique scenario ID
@@ -508,7 +503,7 @@ class LLMAgent:
                 ("human", """Code changes: {changes}
                 Generated tests: {tests}
                 
-                Create comprehensive test scenarios.""")
+                Create comprehensive test scenarios. Use Korean language.""")
             ])
             
             # 변경사항과 테스트 요약
@@ -571,11 +566,11 @@ class LLMAgent:
                 3. Correctness - Do tests properly validate the functionality?
                 4. Best practices - Do they follow testing conventions?
                 
-                Provide improvement suggestions and a quality score (1-10)."""),
+                Provide improvement suggestions and a quality score (1-10). Use Korean language."""),
                 ("human", """Generated tests: {tests}
                 Test scenarios: {scenarios}
                 
-                Review and provide feedback.""")
+                Review and provide feedback. Use Korean language.""")
             ])
             
             tests_summary = self._summarize_tests(state["generated_tests"])
@@ -629,14 +624,12 @@ class LLMAgent:
         self,
         file_change: FileChange,
         test_type: TestStrategy,
-        rag_context: Optional[str] = None
     ) -> List[TestCase]:
         """
         특정 파일의 변경된 함수들에 대해 지정된 테스트 전략에 따라 테스트 케이스를 비동기적으로 생성합니다.
         Args:
             file_change (FileChange): 테스트를 생성할 파일의 변경 정보(경로, 변경 함수 목록, diff 등)를 담고 있는 객체입니다.
             test_type (TestStrategy): 생성할 테스트의 유형(예: 단위 테스트, 통합 테스트 등)을 지정합니다.
-            rag_context (Optional[str], optional): 테스트 생성 시 참고할 추가적인 RAG(검색 증강 생성) 컨텍스트 정보입니다. 기본값은 None입니다.
         Returns:
             List[TestCase]: 생성된 테스트 케이스(TestCase) 객체들의 리스트를 반환합니다. 
                             테스트 생성에 실패하거나 파싱에 실패한 경우 해당 함수에 대한 테스트는 리스트에 포함되지 않습니다.
@@ -659,14 +652,10 @@ class LLMAgent:
             elif file_change.language == "javascript":
                 language_specific = "Use Jest framework with proper describe/it blocks."
             
-            # RAG 컨텍스트 포함
-            context = f"Testing conventions:\n{rag_context}\n\n" if rag_context else ""
-            
             # 변경된 함수별로 테스트 생성
             for function_name in file_change.functions_changed[:5]:  # 최대 5개
                 system_prompt, human_prompt = self.prompt_loader.get_prompt(
                     "test_generation",
-                    context=context,
                     test_type=test_type.value,
                     file_path=file_change.file_path,
                     function_name=function_name,
@@ -798,7 +787,6 @@ class LLMAgent:
     async def generate_tests(
         self,
         commit_analysis: CommitAnalysis,
-        rag_context: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         메인 테스트 생성 함수
@@ -819,7 +807,6 @@ class LLMAgent:
                 "test_strategy": None,
                 "generated_tests": [],
                 "test_scenarios": [],
-                "rag_context": rag_context,
                 "error": None,
                 "current_step": "starting"
             }
