@@ -10,10 +10,10 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock
 
-# 테스트 대상 모듈
-from ai_test_generator.main import AITestGenerator, TestGenerationResult
+# 테스트 대상 모듈 - Legacy main.py removed, now testing Pipeline system
+from ai_test_generator.core.pipeline_stages import PipelineOrchestrator, PipelineContext, StageResult
 from ai_test_generator.utils.config import Config
-from ai_test_generator.core.vcs_models import CommitAnalysis, FileChange
+from ai_test_generator.core.vcs_models import CommitAnalysis, FileChange  
 from ai_test_generator.core.llm_agent import TestCase, TestScenario, TestStrategy
 
 

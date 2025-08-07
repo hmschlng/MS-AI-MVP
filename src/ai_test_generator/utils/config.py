@@ -37,21 +37,6 @@ class AzureOpenAIConfig:
         )
 
 
-@dataclass
-class AzureSearchConfig:
-    """Azure AI Search 설정"""
-    endpoint: str
-    api_key: str
-    index_name: str
-    
-    @classmethod
-    def from_env(cls) -> 'AzureSearchConfig':
-        """환경 변수에서 설정 로드"""
-        return cls(
-            endpoint=os.getenv('AZURE_SEARCH_ENDPOINT'),
-            api_key=os.getenv('AZURE_SEARCH_API_KEY'),
-            index_name=os.getenv('AZURE_SEARCH_INDEX_NAME')
-        )
 
 
 @dataclass
@@ -91,7 +76,6 @@ class Config:
         """
         # 기본 환경 변수에서 로드
         self.azure_openai = AzureOpenAIConfig.from_env()
-        self.azure_search = AzureSearchConfig.from_env()
         self.app = AppConfig.from_env()
         
         # 설정 파일이 있으면 오버라이드
@@ -122,10 +106,6 @@ class Config:
                 if hasattr(self.azure_openai, key):
                     setattr(self.azure_openai, key, value)
         
-        if 'azure_search' in data:
-            for key, value in data['azure_search'].items():
-                if hasattr(self.azure_search, key):
-                    setattr(self.azure_search, key, value)
         
         if 'app' in data:
             for key, value in data['app'].items():
@@ -144,10 +124,5 @@ class Config:
         if not self.azure_openai.api_key:
             errors.append("Azure OpenAI API key is not configured")
         
-        # Azure Search 설정 검증
-        if not self.azure_search.endpoint:
-            errors.append("Azure Search endpoint is not configured")
-        if not self.azure_search.api_key:
-            errors.append("Azure Search API key is not configured")
         
         return errors

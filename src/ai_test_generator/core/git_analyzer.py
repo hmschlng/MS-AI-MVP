@@ -537,3 +537,50 @@ class GitAnalyzer:
         except Exception as e:
             logger.error(f"Failed to find related files: {e}")
             return []
+    
+    def get_file_content_at_commit(self, file_path: str, commit_hash: str) -> Optional[str]:
+        """
+        특정 커밋에서의 파일 전체 내용을 가져옵니다.
+        
+        Args:
+            file_path: 파일 경로
+            commit_hash: 커밋 해시
+            
+        Returns:
+            str: 파일의 전체 내용, 파일이 없으면 None
+        """
+        try:
+            commit = self.repo.commit(commit_hash)
+            try:
+                # 파일이 해당 커밋에 존재하는지 확인
+                blob = commit.tree[file_path]
+                content = blob.data_stream.read().decode('utf-8')
+                return content
+            except KeyError:
+                logger.warning(f"File {file_path} not found in commit {commit_hash}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting file content for {file_path} at {commit_hash}: {e}")
+            return None
+    
+    def get_current_file_content(self, file_path: str) -> Optional[str]:
+        """
+        현재 워킹 디렉토리의 파일 내용을 가져옵니다.
+        
+        Args:
+            file_path: 파일 경로
+            
+        Returns:
+            str: 파일의 전체 내용, 파일이 없으면 None
+        """
+        try:
+            full_path = Path(self.repo_path) / file_path
+            if full_path.exists():
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            else:
+                logger.warning(f"File {file_path} not found in working directory")
+                return None
+        except Exception as e:
+            logger.error(f"Error reading file {file_path}: {e}")
+            return None

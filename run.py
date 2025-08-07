@@ -14,7 +14,7 @@ from typing import Optional, List, Dict
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from ai_test_generator.main import generate_tests_from_git, generate_tests_from_remote_git
+# Legacy imports removed - now using Pipeline system only
 from ai_test_generator.core.commit_selector import CommitSelector
 from ai_test_generator.core.pipeline_stages import PipelineOrchestrator, PipelineContext, PipelineStage
 from ai_test_generator.utils.config import Config
@@ -39,11 +39,11 @@ Examples:
   # Launch Streamlit web interface
   python run.py ui --port 8501
 
-  # Legacy Git repository analysis
-  python run.py git ./my-repo --max-commits 5
+  # Quick Git analysis (auto-selects recent commits)
+  python run.py git ./my-repo --max-commits 10
 
-  # Remote Git repository
-  python run.py remote https://github.com/user/repo.git --max-commits 3
+  # Quick remote Git analysis
+  python run.py remote https://github.com/user/repo.git --max-commits 10
 
   # Run examples
   python run.py example local
@@ -55,12 +55,10 @@ Examples:
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    # Git 분석 명령 (기존 방식)
-    git_parser = subparsers.add_parser('git', help='Analyze local Git repository (legacy mode)')
+    # Simple Git analysis command (Pipeline-based)
+    git_parser = subparsers.add_parser('git', help='Quick Git repository analysis (uses latest commits)')
     git_parser.add_argument('repo_path', help='Path to Git repository')
     git_parser.add_argument('--branch', help='Branch to analyze (default: current branch)')
-    git_parser.add_argument('--start-commit', help='Start commit hash')
-    git_parser.add_argument('--end-commit', help='End commit hash') 
     git_parser.add_argument('--max-commits', type=int, default=10, help='Maximum commits to analyze (default: 10)')
     
     # 새로운 대화형 Git 분석 명령
@@ -81,8 +79,8 @@ Examples:
     ui_parser = subparsers.add_parser('ui', help='Launch Streamlit web interface')
     ui_parser.add_argument('--port', type=int, default=8501, help='Port for Streamlit app (default: 8501)')
     
-    # 원격 Git 분석 명령
-    remote_parser = subparsers.add_parser('remote', help='Analyze remote Git repository')
+    # Simple remote Git analysis command (Pipeline-based)  
+    remote_parser = subparsers.add_parser('remote', help='Quick remote Git repository analysis')
     remote_parser.add_argument('remote_url', help='Remote repository URL')
     remote_parser.add_argument('--branch', help='Branch to analyze')
     remote_parser.add_argument('--max-commits', type=int, default=10, help='Maximum commits to analyze (default: 10)')
@@ -100,7 +98,7 @@ Examples:
                             nargs='?', default='all',
                             help='Type of tests to run (default: all)')
     
-    # 공통 인자
+    # 공통 인자 - git과 remote도 포함하여 Pipeline 기반으로 통일
     for p in [git_parser, remote_parser, interactive_parser, pipeline_parser]:
         p.add_argument('--output', help='Output directory (default: ./output)')
         p.add_argument('--project-name', help='Project name for reports')
@@ -116,47 +114,38 @@ Examples:
 
 
 async def run_git_analysis(args) -> None:
-    """Git 분석 실행"""
+    """Git 분석 실행 (Pipeline 기반)"""
     logger = get_logger()
     
     if not Path(args.repo_path).exists():
         print(f"❌ Error: Repository path does not exist: {args.repo_path}")
         return
     
-    # 프로젝트 정보 구성
-    project_info = {}
-    if args.project_name:
-        project_info['project_name'] = args.project_name
-    if args.project_version:
-        project_info['version'] = args.project_version
-    if args.tester:
-        project_info['tester'] = args.tester
-    
-    # 출력 디렉토리 설정
-    if args.output:
-        import os
-        os.environ['OUTPUT_DIRECTORY'] = args.output
-    
     try:
         if not args.quiet:
-            print(f"🔍 Analyzing Git repository: {args.repo_path}")
+            print(f"🔍 Quick Git repository analysis: {args.repo_path}")
             print(f"   Branch: {args.branch or 'current'}")
             print(f"   Max commits: {args.max_commits}")
-            if project_info:
-                print(f"   Project: {project_info.get('project_name', 'N/A')}")
         
-        # 분석 실행
-        result = await generate_tests_from_git(
-            repo_path=args.repo_path,
-            start_commit=args.start_commit,
-            end_commit=args.end_commit,
-            branch=args.branch,
+        # CommitSelector를 통한 최신 커밋 자동 선택
+        commit_selector = CommitSelector(args.repo_path, args.branch or "main")
+        recent_commits = commit_selector.get_commit_list(
             max_commits=args.max_commits,
-            project_info=project_info or None
+            exclude_test_commits=True
         )
         
-        # 결과 출력
-        await print_results(result, args.quiet, args.verbose)
+        if not recent_commits:
+            print("❌ No commits found to analyze")
+            return
+        
+        # 최신 커밋들을 자동 선택
+        selected_commit_hashes = [commit.hash for commit in recent_commits[:min(5, len(recent_commits))]]
+        
+        if not args.quiet:
+            print(f"📝 Auto-selected {len(selected_commit_hashes)} recent commits for analysis")
+        
+        # Pipeline으로 처리
+        await run_pipeline_for_commits(args, selected_commit_hashes)
         
     except Exception as e:
         logger.error(f"Git analysis failed: {e}")
@@ -164,45 +153,59 @@ async def run_git_analysis(args) -> None:
 
 
 async def run_remote_analysis(args) -> None:
-    """원격 저장소 분석 실행"""
+    """원격 저장소 분석 실행 (Pipeline 기반)"""
     logger = get_logger()
-    
-    # 프로젝트 정보 구성
-    project_info = {}
-    if args.project_name:
-        project_info['project_name'] = args.project_name
-    if args.project_version:
-        project_info['version'] = args.project_version
-    if args.tester:
-        project_info['tester'] = args.tester
-    
-    # 출력 디렉토리 설정
-    if args.output:
-        import os
-        os.environ['OUTPUT_DIRECTORY'] = args.output
+    temp_path = None
     
     try:
         if not args.quiet:
-            print(f"🌐 Analyzing remote repository: {args.remote_url}")
+            print(f"🌐 Quick remote repository analysis: {args.remote_url}")
             print(f"   Branch: {args.branch or 'default'}")
             print(f"   Max commits: {args.max_commits}")
-            if project_info:
-                print(f"   Project: {project_info.get('project_name', 'N/A')}")
         
-        # 분석 실행
-        result = await generate_tests_from_remote_git(
-            remote_url=args.remote_url,
-            branch=args.branch,
+        # 원격 저장소 클론
+        from ai_test_generator.core.git_analyzer import GitAnalyzer
+        temp_path = GitAnalyzer.clone_remote_repo(args.remote_url, branch=args.branch)
+        
+        if not args.quiet:
+            print(f"📁 Repository cloned to: {temp_path}")
+        
+        # CommitSelector를 통한 최신 커밋 자동 선택
+        commit_selector = CommitSelector(temp_path, args.branch or "main")
+        recent_commits = commit_selector.get_commit_list(
             max_commits=args.max_commits,
-            project_info=project_info or None
+            exclude_test_commits=True
         )
         
-        # 결과 출력
-        await print_results(result, args.quiet, args.verbose)
+        if not recent_commits:
+            print("❌ No commits found to analyze")
+            return
+        
+        # 최신 커밋들을 자동 선택
+        selected_commit_hashes = [commit.hash for commit in recent_commits[:min(5, len(recent_commits))]]
+        
+        if not args.quiet:
+            print(f"📝 Auto-selected {len(selected_commit_hashes)} recent commits for analysis")
+        
+        # repo_path를 임시 경로로 설정하여 Pipeline 처리
+        args.repo_path = temp_path
+        await run_pipeline_for_commits(args, selected_commit_hashes)
         
     except Exception as e:
         logger.error(f"Remote analysis failed: {e}")
         print(f"❌ Analysis failed: {e}")
+    
+    finally:
+        # 임시 디렉토리 정리
+        if temp_path:
+            try:
+                import shutil
+                if Path(temp_path).exists():
+                    shutil.rmtree(temp_path)
+                    if not args.quiet:
+                        print(f"🧹 Cleaned up temporary directory")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp directory: {e}")
 
 
 async def run_examples(args) -> None:
@@ -658,80 +661,7 @@ async def print_pipeline_results(results: Dict, quiet: bool = False, verbose: bo
     print("\n" + "="*60)
 
 
-async def print_results(result, quiet: bool = False, verbose: bool = False) -> None:
-    """분석 결과 출력"""
-    summary = result.to_summary_dict()
-    
-    if quiet:
-        # 간단한 요약만
-        status = "✅ Success" if summary['success'] else "❌ Failed"
-        print(f"{status} | Tests: {summary['total_tests_generated']} | Scenarios: {summary['total_scenarios_generated']} | Time: {summary['execution_time_seconds']:.1f}s")
-        return
-    
-    print("\n" + "="*50)
-    print("📊 ANALYSIS RESULTS")
-    print("="*50)
-    
-    # 기본 통계
-    print(f"🔍 Commits Analyzed: {summary['total_commits_analyzed']}")
-    print(f"📁 Files Changed: {summary['total_files_changed']}")
-    print(f"🧪 Tests Generated: {summary['total_tests_generated']}")
-    print(f"📋 Scenarios Generated: {summary['total_scenarios_generated']}")
-    print(f"⏱️ Execution Time: {summary['execution_time_seconds']:.2f} seconds")
-    print(f"✅ Status: {'Success' if summary['success'] else 'Failed'}")
-    
-    # 출력 파일
-    if summary['output_files']:
-        print(f"\n📁 Generated Files:")
-        for file_type, file_path in summary['output_files'].items():
-            file_size = ""
-            if Path(file_path).exists():
-                size_bytes = Path(file_path).stat().st_size
-                if size_bytes > 1024*1024:
-                    file_size = f" ({size_bytes/(1024*1024):.1f} MB)"
-                elif size_bytes > 1024:
-                    file_size = f" ({size_bytes/1024:.1f} KB)"
-                else:
-                    file_size = f" ({size_bytes} bytes)"
-            
-            print(f"   📄 {file_type.title()}: {Path(file_path).name}{file_size}")
-    
-    # 에러 및 경고
-    if summary['errors']:
-        print(f"\n❌ Errors ({len(summary['errors'])}):")
-        for error in summary['errors'][:5 if not verbose else None]:
-            print(f"   • {error}")
-        if len(summary['errors']) > 5 and not verbose:
-            print(f"   • ... and {len(summary['errors']) - 5} more errors")
-    
-    if summary['warnings']:
-        print(f"\n⚠️ Warnings ({len(summary['warnings'])}):")
-        for warning in summary['warnings'][:3 if not verbose else None]:
-            print(f"   • {warning}")
-        if len(summary['warnings']) > 3 and not verbose:
-            print(f"   • ... and {len(summary['warnings']) - 3} more warnings")
-    
-    # 상세 정보 (verbose 모드)
-    if verbose and result.commit_analyses:
-        print(f"\n🔍 Detailed Commit Analysis:")
-        for i, analysis in enumerate(result.commit_analyses[:5], 1):
-            print(f"\n   Commit {i}: {analysis.commit_hash[:8]}")
-            print(f"   Author: {analysis.author}")
-            print(f"   Date: {analysis.commit_date.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"   Message: {analysis.message[:50]}{'...' if len(analysis.message) > 50 else ''}")
-            print(f"   Files: {len(analysis.files_changed)} changed (+{analysis.total_additions}/-{analysis.total_deletions})")
-    
-    # 성능 지표
-    if summary['total_commits_analyzed'] > 0:
-        avg_time = summary['execution_time_seconds'] / summary['total_commits_analyzed']
-        print(f"\n📈 Performance Metrics:")
-        print(f"   Average time per commit: {avg_time:.2f}s")
-        
-        if summary['total_tests_generated'] > 0:
-            avg_test_time = summary['execution_time_seconds'] / summary['total_tests_generated']
-            print(f"   Average time per test: {avg_test_time:.2f}s")
-    
-    print("\n" + "="*50)
+# Legacy print_results function removed - now using Pipeline system with print_pipeline_results
 
 
 def print_usage_help():
@@ -747,7 +677,7 @@ Quick Start:
   2. 💬 Interactive analysis:           python run.py interactive ./my-repo
                                         python run.py interactive https://github.com/user/repo.git
   3. ⚡ Direct pipeline execution:       python run.py pipeline ./my-repo --commits abc123 def456
-  4. 📊 Legacy Git analysis:            python run.py git ./my-repo
+  4. 📊 Quick Git analysis:             python run.py git ./my-repo
 
 🌐 Web Interface:
   - Full-featured web UI with commit selection

@@ -12,8 +12,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-import pysvn
-from pysvn.client import Client
+try:
+    import pysvn
+    from pysvn.client import Client
+    PYSVN_AVAILABLE = True
+except ImportError:
+    PYSVN_AVAILABLE = False
+    # pysvn이 없을 때 더미 클래스 정의
+    class Client:
+        pass
 
 from .vcs_models import FileChange, CommitAnalysis
 
@@ -49,6 +56,9 @@ class SvnAnalyzer:
             repo_url: Svn 저장소 URL
             local_path: 체크아웃할 로컬 경로 (None이면 임시 디렉터리 생성)
         """
+        if not PYSVN_AVAILABLE:
+            raise ImportError("pysvn is not available. Please install pysvn to use SvnAnalyzer")
+            
         self.repo_url = repo_url
         self.local_path = Path(local_path or tempfile.mkdtemp(prefix="Svn_analyzer_checkout_")).resolve()
         self.client = Client()
