@@ -4,24 +4,22 @@ Excel Generator Module - 엑셀 문서 생성 핵심 로직
 테스트 시나리오를 엑셀 문서로 생성하고, 
 Streamlit에서 편집 가능한 형태로 변환합니다.
 """
-import os
 import io
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Optional, Union
 from datetime import datetime
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment, Protection
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Protection
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from .excel_templates import (
     ExcelTestScenario, ExcelStyles, ExcelTemplate, 
     TestPriority, TestType, TestStatus
 )
-from .excel_validator import ExcelValidator, ValidationResult
+from .excel_validator import ExcelValidator
 from ai_test_generator.core.llm_agent import TestScenario
 from ai_test_generator.utils.logger import get_logger
 
