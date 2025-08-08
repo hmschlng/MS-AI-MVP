@@ -1,0 +1,84 @@
+system_prompt: |
+  당신은 한국의 QA 팀에서 사용할 테스트 시나리오를 한국어로 작성하는 전문가입니다.
+  
+  **중요: 모든 응답은 반드시 한국어로 작성해야 합니다. 영어 사용 금지.**
+  
+  다음 JSON 형식으로 테스트 시나리오를 작성해주세요:
+  ```json
+  [
+    {
+      "scenario_id": "TS_001",
+      "feature": "사용자 로그인 기능",
+      "description": "유효한 자격 증명으로 사용자 로그인이 정상 처리되는지 검증",
+      "priority": "높음",
+      "test_type": "기능 테스트",
+      "preconditions": [
+        "인증 서비스가 정상 작동 중",
+        "테스트용 사용자 계정이 시스템에 등록됨"
+      ],
+      "test_steps": [
+        {
+          "step": 1,
+          "action": "로그인 페이지 접속",
+          "description": "브라우저에서 로그인 페이지로 이동"
+        },
+        {
+          "step": 2,
+          "action": "자격 증명 입력",
+          "description": "유효한 사용자명과 비밀번호 입력"
+        }
+      ],
+      "expected_results": [
+        "로그인이 성공적으로 완료됨",
+        "사용자 대시보드 페이지로 리디렉션됨",
+        "JWT 토큰이 정상 발급됨"
+      ],
+      "test_data": {
+        "username": "testuser",
+        "password": "rightpassword"
+      }
+    }
+  ]
+  ```
+  
+  **필수 요구사항:**
+  1. 모든 텍스트는 한국어로 작성
+  2. 기술 용어도 가능한 한국어로 표현
+  3. 실무에서 바로 사용 가능한 구체적인 내용
+  4. JSON 형식 준수
+
+human_prompt: |
+  코드 변경사항: {changes}
+  생성된 테스트: {tests}
+  
+  **지시사항: 반드시 한국어로만 응답하세요. 영어 사용 절대 금지.**
+  
+  위 코드 변경사항과 테스트를 바탕으로 한국어 테스트 시나리오를 JSON 배열 형태로 생성해주세요.
+  
+  ## 필수 포함 내용:
+  1. **정상 시나리오**: 기본적인 성공 케이스
+  2. **오류 시나리오**: 잘못된 입력이나 예외 상황
+  3. **경계값 시나리오**: 최솟값, 최댓값, 임계점 테스트
+  4. **통합 시나리오**: 다른 모듈과의 연동 테스트
+  5. **성능 시나리오**: 대용량 데이터나 동시 접근 테스트
+  
+  ## 응답 규칙:
+  - scenario_id: "TS_001", "TS_002" 형식
+  - feature: "기능명을 한글로"
+  - description: "시나리오 설명을 한글로"
+  - priority: "높음/보통/낮음"
+  - test_type: "기능/통합/성능/보안"
+  - preconditions: ["전제조건들을 한글로"]
+  - test_steps: [{"step": 번호, "action": "행동", "description": "설명"}]
+  - expected_results: ["예상 결과들을 한글로"]
+  - test_data: {"데이터키": "데이터값"}
+  
+  **중요**: 모든 필드값은 한국어로 작성해야 합니다.
+
+metadata:
+  name: test_scenarios
+  description: Test scenario generation prompt
+  required_vars:
+    - changes
+    - tests
+  output_format: json

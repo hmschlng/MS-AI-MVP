@@ -4,6 +4,15 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Distribution / packaging
+.Python
 build/
 develop-eggs/
 dist/
@@ -16,73 +25,47 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# Virtual environments
-.venv/
-.env/
-venv/
-ENV/
-env/
-.venv
-
-# Environment variables
-.env
-.env.local
-.env.production
-.env.staging
-
-# Streamlit
-.streamlit/
-
-# IDE
-.vscode/
+# PyCharm
 .idea/
-*.swp
-*.swo
-*~
 
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
+# VS Code
+.vscode/
 
-# Logs
-*.log
-logs/
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Cache
-.cache/
+# pytest
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Documentation
-docs/_build/
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# Azure specific
-.azure/
-*.publishsettings
+# Environments
+.env
+.env.local
+.env.*.local
 
-# Temporary files
-*.tmp
-*.temp
+# Logs
+logs/
+*.log
+
+# Output directories
+output/
 temp/
-tmp/
+cache/
 
-# uv specific
-uv.lock
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure
+.azure/

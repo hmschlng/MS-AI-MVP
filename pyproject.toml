@@ -1,15 +1,79 @@
 [project]
-name = "mvp"
+name = "ai-test-generator"
 version = "0.1.0"
-description = "Add your description here"
+description = "테스트코드 및 테스트 시나리오 자동 생성 도우미"
 readme = "README.md"
-requires-python = ">=3.12.10"
+requires-python = "==3.12.10"
 dependencies = [
-    "azure-identity>=1.23.1",
-    "azure-storage-blob>=12.26.0",
-    "langchain>=0.3.27",
-    "langchain-community>=0.3.27",
-    "langchain-openai>=0.3.28",
-    "python-dotenv>=1.1.1",
-    "streamlit>=1.47.1",
+    # Version Control
+    "gitpython>=3.1.40",
+    "pysvn>=0.1.0",
+    # LangChain Ecosystem
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.8",
+    "langgraph>=0.0.40",
+    "langfuse>=2.0.0",
+    # Azure Integration
+    "azure-search-documents>=11.4.0",
+    "azure-identity>=1.15.0",
+    "azure-core>=1.29.0",
+    # Data Processing
+    "pandas>=2.2.2",
+    "openpyxl>=3.1.0",
+    "numpy>=2.0.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "pydantic>=2.5.0",
+    "tenacity>=8.2.0", # 재시도 로직
+    "PyYAML>=6.0.0", # YAML 파일 처리
+    # Development Tools
+    "jupyter>=1.0.0", # 개발 및 디버깅용
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.0.0",
+]
+
+streamlit = [
+    "streamlit>=1.28.0",
+    "plotly>=5.17.0",
+    "streamlit-agraph>=0.0.45",  # 워크플로우 시각화
+    "streamlit-option-menu>=0.3.0",  # 사이드바 메뉴
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+ai-test-gen = "ai_test_generator.cli:main"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
