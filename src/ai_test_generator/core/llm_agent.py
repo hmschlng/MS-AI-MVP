@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 """
 LLM Agent Module - AI 기반 테스트 생성 에이전트
 
@@ -1701,6 +1705,7 @@ class LLMAgent:
             if isinstance(parsed_data, list):
                 scenarios = parsed_data
                 logger.info(f"JSON 배열 파싱 성공: {len(scenarios)}개 시나리오")
+
             elif isinstance(parsed_data, dict):
                 scenarios = [parsed_data]
                 logger.info("JSON 객체 파싱 성공: 1개 시나리오")
@@ -2040,4 +2045,4 @@ class LLMAgent:
                 "scenario_completeness": "기본 수준"
             }
         }
-    
+

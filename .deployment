@@ -1,2 +1,2 @@
 [config]
-command = startup.sh
+SCM_DO_BUILD_DURING_DEPLOYMENT=false
