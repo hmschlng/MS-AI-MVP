@@ -806,9 +806,12 @@ def show_commit_selection():
                 search_results = commit_selector.search_commits(search_query, "message", max_commits)
                 if search_results:
                     st.success(f"✅ '{search_query}' 검색 결과: {len(search_results)}개 커밋 발견")
+                    # 검색 결과를 기존 커밋 선택 UI로 표시
+                    st.subheader(f"🔎 '{search_query}' 검색 결과")
+                    display_commit_selection_ui(search_results, commit_selector)
+                    return  # 검색 결과만 표시하고 종료
                 else:
                     st.warning(f"⚠️ '{search_query}' 검색 결과가 없습니다")
-                display_commit_list(search_results, f"🔎 '{search_query}' 검색 결과")
     
     # 커밋 리스트 로드
     try:
